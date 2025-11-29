@@ -1,4 +1,3 @@
-// db/qdrant.js
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { v4 as uuidv4 } from "uuid";
 
@@ -10,11 +9,13 @@ export const qdrant = new QdrantClient({
 });
 
 // -------------------------------
-// Create collection with payload schema
+// Create collection with dynamic vector size
 // -------------------------------
 export async function createCollectionIfNotExists(collectionName, vectorSize) {
   try {
-    await qdrant.getCollection(collectionName).catch(async () => {
+    const collection = await qdrant.getCollection(collectionName).catch(() => null);
+
+    if (!collection) {
       await qdrant.createCollection(collectionName, {
         vectors: {
           size: vectorSize,
@@ -25,10 +26,10 @@ export async function createCollectionIfNotExists(collectionName, vectorSize) {
           text: { type: "text" },
         },
       });
-      console.log(`🟢 Created collection: ${collectionName}`);
-    });
-
-    console.log("Collection ready:", collectionName);
+      console.log(`🟢 Created collection: ${collectionName} with vectorSize=${vectorSize}`);
+    } else {
+      console.log(`Collection exists: ${collectionName} (vectorSize=${collection.vectors?.size})`);
+    }
   } catch (e) {
     console.warn("createCollection error:", e.message);
   }
@@ -37,8 +38,12 @@ export async function createCollectionIfNotExists(collectionName, vectorSize) {
 // -------------------------------
 // Insert points
 // -------------------------------
-export async function upsertPoints(collectionName, points, vectorSize = 1536) {
-  // Ensure collection exists before upsert
+export async function upsertPoints(collectionName, points) {
+  if (points.length === 0) return;
+
+  // Dynamically get vector size from first point
+  const vectorSize = points[0].vector.length;
+
   await createCollectionIfNotExists(collectionName, vectorSize);
 
   const formatted = points.map((p) => ({
@@ -55,10 +60,8 @@ export async function upsertPoints(collectionName, points, vectorSize = 1536) {
 // -------------------------------
 // Search
 // -------------------------------
-export async function search(collectionName, vector, topK = 5, vectorSize = 1536) {
-  // Ensure collection exists before search
-  await createCollectionIfNotExists(collectionName, vectorSize);
-
+export async function search(collectionName, vector, topK = 5) {
+  // DO NOT create collection here!
   const res = await qdrant.search(collectionName, {
     vector,
     limit: topK,
